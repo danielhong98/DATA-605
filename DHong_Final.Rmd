@@ -1,0 +1,211 @@
+---
+title: "Computational Math DATA 605 Final"
+author: "Daniel Hong"
+date: "December 20, 2016"
+output: html_document
+---
+
+The objective is to use the Ames dataset to participate in the Kaggle competition, House Prices: Advanced Regression Techniques. There are 79 explanatory variables describing (almost) every aspect of residential homes in Ames, Iowa and this competition challenges the participant to predict the final price of each home. Start by loading the required packages, these data and looking at some basic information, like completeness of the dataset, means, standard dviations, min and max values. 
+```{r}
+require("plyr")
+require("knitr")
+require("psych")
+require("reshape2")
+require("ggplot2")
+require("MASS")
+
+train <- read.csv(url('https://raw.githubusercontent.com/danielhong98/DATA-605/master/train.csv'))
+test <- read.csv(url('https://raw.githubusercontent.com/danielhong98/DATA-605/master/test.csv'))
+
+columns <- colnames(train)
+columns
+target <- "SalePrice"
+inputs <- columns[!columns %in% c(target,"ID")]
+
+summary <- describe(train[,c(target,inputs)])[,c("n","mean","sd","median","max","min")]
+summary$completeness <- summary$n/nrow(train)
+kable(summary)
+```
+Pick one of the quantitative independent variables from the training data set, and define that variable as X. Make sure this variable is skewed to the right! Pick the dependent variable and define it as  Y. From the above table, it appears that there are a number of independent variables that are right skewed but "LotArea" may have the largest skew with a completeness of 1 (n=1460).
+```{r}
+X <- train$LotArea
+Y <- train$SalePrice
+
+quant <- quantile(X)
+
+x <- quant[4]
+x
+
+y <- median(Y)
+y
+
+less3qt <- X <= 11601.5
+great3qt <- X > 11601.5
+
+lessmed <- Y <= 163000
+greatmed <- Y > 163000
+
+
+row11 <- sum(less3qt & lessmed)
+row12 <- sum(less3qt & greatmed)
+row1tot <- row11 + row12
+
+row21 <- sum(great3qt & lessmed)
+row22 <- sum(great3qt & greatmed)
+row2tot <- row21 + row22 
+
+c1tot <- row11 + row21
+c2tot <- row12 + row22
+c3tot <- c1tot + c2tot
+```
+Probability. Calculate as a minimum the below probabilities a through c. Assume the small letter "x" is estimated as the 3d quartile of the X variable, and the small letter "y" is estimated as the 2d quartile of the Y variable. Interpret the meaning of all probabilities. From the above table we can compute the following:
+a.	 P(X>x | Y>y)
+```{r}
+276/728
+```
+b.  P(X>x, Y>y)	
+```{r}
+276/1460
+```
+c.  P(X<x | Y>y)	
+```{r}
+452/728
+```
+Does splitting the training data in this fashion make them independent? Let A be the new variable counting those observations above the 3d quartile for X, and let B be the new variable counting those observations above the 2d quartile for Y. Does P(A|B)=P(A)P(B)? Check mathematically, and then evaluate by running a Chi Square test for association.
+
+Splitting the training set in this fashion does not make them independent. To show this mathematically:
+P(A|B) = 0.3791209 and the P(A)P(B) = 0.1246575
+
+Chi Square test
+```{r}
+C <- cbind(X,Y)
+chisq.test(C)
+```
+Based on the test, we see a chi-squared value of 7125100, 1459 degrees of freedom and a very very significant p-value.
+
+Descriptive and Inferential Statistics. Provide univariate descriptive statistics and appropriate plots for the training data set. Provide a scatterplot of X and Y. Provide a 95% CI for the difference in the mean of the variables. Derive a correlation matrix for two of the quantitative variables you selected. Test the hypothesis that the correlation between these variables is 0 and provide a 99% confidence interval. Discuss the meaning of your analysis.
+
+First look at variables with right skew, including the ones currently being investigated.
+```{r}
+par(mfrow=c(1,2))
+
+hist(train$SalePrice, main= "Sale Price Histogram")
+boxplot(train$SalePrice, main="Sale Price Boxplot")
+
+hist(train$LotArea, breaks = 100, main="Lot Area Histogram")
+boxplot(train$LotArea,main="Lot Area Boxplot")
+
+hist(train$TotalBsmtSF, main="TotalBsmtSF Histogram")
+boxplot(train$TotalBsmtSF, main="TotalBsmtSF Boxplot")
+
+hist(train$GrLivArea, main="GrLivArea Histogram")
+boxplot(train$GrLivArea, main="GrLivArea Boxplot")
+
+hist(train$BsmtFinSF1, main="BsmtFinSF1 Histogram")
+boxplot(train$BsmtFinSF1, main="BsmtFinSF1 Boxplot")
+```
+
+Scatterplot of X and Y (LotArea and SalePrice)
+```{r}
+p <- ggplot(train, aes(LotArea, SalePrice))
+p + geom_point()
+```
+There appears to be somewhat of a linear relationship between these variables, however the concentration looks to be around a LotArea of 100000.
+
+Test the confidence interval, the difference in means is not equal to zero, the alternative hypothesis (the two variables are dependent) must be accepted.
+```{r}
+t.test(X,Y)
+```
+
+Correlation matrix
+```{r}
+correlation <- cor(X,Y)
+correlation
+```
+It is concerning that there is a weak correlation between these variables but it may be impacted by the outliers.
+
+Test the hypothesis that the correlation between these two variables is 0 and provide a 99% confidence interval
+```{r}
+t.test(X,Y, conf.level = 0.99)
+```
+Again we see the alternative hypothesis must be accepted.
+
+Linear Algebra and Correlation. Invert your correlation matrix. (This is known as the precision matrix and contains variance inflation factors on the diagonal.) Multiply the correlation matrix by the precision matrix, and then multiply the precision matrix by the correlation matrix. Conduct principle components analysis (research this!)  and interpret. Discuss.
+```{r}
+precision <- solve(correlation)
+precision
+
+precision*correlation
+correlation*precision
+```
+
+This may not be the best way to proceed but will remove all the categorical data instead of using dummy variables. Also removing the X and Y. Impute missing values with the median for LotFrontage, MSSubClass and MasVnrArea.
+```{r}
+train1 <- train[,-c(1, 3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 36, 39, 40, 41, 42, 43, 54, 56, 58, 59, 60, 61, 64, 65, 66, 73, 74, 75, 79, 80, 81)]
+
+train1$LotFrontage[is.na(train1$LotFrontage)] <- median(train1$LotFrontage, na.rm=T)
+train1$MSSubClass[is.na(train1$MSSubClass)] <- median(train1$MSSubClass, na.rm=T)
+train1$MasVnrArea[is.na(train1$MasVnrArea)] <- median(train1$MasVnrArea, na.rm=T)
+
+train1.pca <- prcomp(train1)
+plot(train1.pca, type = "l")
+summary(train1.pca)
+predict(train1.pca, newdata=tail(train1, 2))
+```
+
+Calculus-Based Probability & Statistics. Many times, it makes sense to fit a closed form distribution to data. For your variable that is skewed to the right, shift it so that the minimum value is above zero. Then load the MASS package and run fitdistr to fit an exponential probability density function. Find the optimal value of ??? for this distribution, and then take 1000 samples from this exponential distribution using this value (e.g., rexp(1000, ???)).  Plot a histogram and compare it with a histogram of your original variable. Using the exponential pdf, find the 5th and 95th percentiles using the cumulative distribution function (CDF). Also generate a 95% confidence interval from the empirical data, assuming normality.  Finally, provide the empirical 5th percentile and 95th percentile of the data. Discuss.
+```{r}
+pdf <- fitdistr(X, densfun="exponential")
+pdf
+
+lambda <- pdf$estimate
+lambda
+
+evlambda <- 1/lambda
+evlambda
+
+pdfsample <- rexp(1000, lambda)
+pdfsample
+
+hist(pdfsample, main="Histogram Exponential PDF")
+hist(X, main="Histogram Original X")
+```
+The original X has more of a right skew than the exponential PDF.
+
+95th percentile
+```{r}
+(-log(1-0.95))/lambda
+(-log(1-0.05))/lambda
+
+qnorm(c(.025, .975), mean=mean(X), sd=sd(X))
+
+quantile(X, c(.05, .95))
+```
+If these data were normally distributed, the mean would lie between -9046.092 and 30079.748 for 95% of the sample. Additionally 5% will be less than or equal to 3311.70 and 5% will be greater than or equal to 17301.15, with 90% in between these values.
+
+Base Model
+```{r}
+train2 <- train[,-c(3, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 36, 39, 40, 41, 42, 43, 54, 56, 58, 59, 60, 61, 64, 65, 66, 73, 74, 75, 79, 80)]
+
+model0 <- glm(SalePrice ~ ., data=train2)
+plot(model0)
+summary(model0)
+```
+
+Model  with high estimate variables and significance
+```{r}
+model1 <- glm(SalePrice ~ LotArea + OverallQual + OverallCond + YearBuilt + YearRemodAdd + BsmtFinSF1 + X1stFlrSF + X2ndFlrSF + FullBath + TotRmsAbvGrd + + GarageCars + WoodDeckSF + ScreenPorch, data=train2)
+plot(model1)
+summary(model1)
+```
+
+Predict House Price
+```{r}
+predict <- predict(model1, test, type="response")
+predict
+
+results <- data.frame(test$Id, predict)
+colnames(results) <- c("ID", "SalePrice")
+#write.csv(results, file = "submission_predicted_prices.csv", row.names = FALSE)
+```
+
